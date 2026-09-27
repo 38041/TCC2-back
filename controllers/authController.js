@@ -5,7 +5,7 @@ function registerUser(req, res) {
   const { nome, email, senha } = req.body;
 
   if (!nome || !email || !senha) {
-    return res.send('Preencha todos os campos.');
+    return res.status(400).send('Preencha todos os campos.');
   }
 
   const hash = bcrypt.hashSync(senha, 10);
@@ -14,16 +14,21 @@ function registerUser(req, res) {
     'INSERT INTO users (nome, email, senha) VALUES (?, ?, ?)',
     [nome, email, hash],
     (err) => {
+
       if (err) {
+        console.error('ERRO CADASTRO:', err);
+
         if (err.code === 'ER_DUP_ENTRY') {
           return res.send('Este e-mail já está cadastrado.');
         }
 
-        console.error(err);
-        return res.send('Erro ao cadastrar usuário.');
+        return res.status(500).send('Erro ao cadastrar usuário.');
       }
 
-      res.redirect('/');
+      // depois do cadastro manda para o login do FRONTEND
+      return res.redirect(
+        'http://127.0.0.1:5500/pages/login.html'
+      );
     }
   );
 }
@@ -31,48 +36,64 @@ function registerUser(req, res) {
 function loginUser(req, res) {
   const { email, senha } = req.body;
 
+  if (!email || !senha) {
+    return res.status(400).send('Informe email e senha.');
+  }
+
   db.query(
     'SELECT * FROM users WHERE email = ?',
     [email],
     (err, rows) => {
-      if (err || rows.length === 0) {
-       return res.status(401).json({
-  sucesso: false,
-  mensagem: 'Usuário não encontrado.'
-});
+
+      // ERRO DE BANCO
+      if (err) {
+        console.error('ERRO LOGIN:', err);
+        return res.status(500).send('Erro ao acessar o banco de dados.');
       }
 
-      const row = rows[0];
+      // EMAIL NÃO EXISTE
+      if (rows.length === 0) {
+        return res.status(401).send('E-mail ou senha incorretos.');
+      }
 
-      const senhaValida = bcrypt.compareSync(senha, row.senha);
+      const usuario = rows[0];
+
+      const senhaValida = bcrypt.compareSync(
+        senha,
+        usuario.senha
+      );
 
       if (!senhaValida) {
-        return res.status(401).json({
-  sucesso: false,
-  mensagem: 'Senha incorreta.'
-});
+        return res.status(401).send('E-mail ou senha incorretos.');
       }
 
       req.session.user = {
-        id: row.id,
-        nome: row.nome,
-        email: row.email
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email
       };
 
-      res.redirect('/');
+      // LOGIN CERTO → COTAÇÃO
+      return res.redirect(
+        'http://127.0.0.1:5500/pages/contato.html'
+      );
     }
   );
 }
 
 function logoutUser(req, res) {
   req.session.destroy(() => {
-    res.redirect('/');
+    res.redirect(
+      'http://127.0.0.1:5500/pages/login.html'
+    );
   });
 }
 
 function deleteUser(req, res) {
   if (!req.session.user) {
-    return res.redirect('/');
+    return res.redirect(
+      'http://127.0.0.1:5500/pages/login.html'
+    );
   }
 
   const userId = req.session.user.id;
@@ -81,21 +102,16 @@ function deleteUser(req, res) {
     'DELETE FROM users WHERE id = ?',
     [userId],
     (err) => {
+
       if (err) {
         console.error(err);
         return res.send('Erro ao excluir conta.');
       }
 
       req.session.destroy(() => {
-        return res.status(200).json({
-  sucesso: true,
-  mensagem: 'Login realizado com sucesso',
-  usuario: {
-    id: row.id,
-    nome: row.nome,
-    email: row.email
-  }
-});
+        res.redirect(
+          'http://127.0.0.1:5500/pages/login.html'
+        );
       });
     }
   );
